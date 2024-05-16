@@ -256,8 +256,8 @@ func getLocationStrings(p map[string]interface{}) Location {
 	return Location{
 		Country:      getPropertyString(p, "ADMIN", "admin"),
 		CountryLong:  getPropertyString(p, "FORMAL_EN"),
-		CountryCode2: getPropertyString(p, "ISO_A2"),
-		CountryCode3: getPropertyString(p, "ISO_A3"),
+		CountryCode2: getPropertyString(p, "ISO_A2_EH"),
+		CountryCode3: getPropertyString(p, "ISO_A3_EH"),
 		Continent:    getPropertyString(p, "CONTINENT"),
 		Region:       getPropertyString(p, "REGION_UN"),
 		SubRegion:    getPropertyString(p, "SUBREGION"),

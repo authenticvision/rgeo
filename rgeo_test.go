@@ -215,7 +215,7 @@ func TestReverseGeocode(t *testing.T) {
 		"type":"FeatureCollection",
 			"features":[
 				{"type":"Feature",
-				"properties":{"ISO_A3":"TST"},
+				"properties":{"ISO_A3_EH":"TST"},
 				"geometry":{"type":"Polygon",
 					"coordinates":[[[0,52],[1,52],[1,53],[0,53],[0,52]]]}}
 			]
