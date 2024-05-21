@@ -540,7 +540,7 @@ func ExampleRgeo_ReverseGeocode_snapping() {
 	}
 
 	fmt.Println(loc)
-	// Output: <Location> Aomori, Japan,
+	// Output: <Location> Aomori, Japan (JPN), Asia
 }
 
 func TestTable(t *testing.T) {
