@@ -18,4 +18,4 @@
 # vendor/
 
 *.geojson
-datagen/datagen
+cmd/datagen/datagen
