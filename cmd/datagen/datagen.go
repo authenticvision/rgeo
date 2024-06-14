@@ -24,7 +24,6 @@ GeoJSON file are different.
 package main
 
 import (
-	"compress/gzip"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -33,6 +32,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/klauspost/compress/zstd"
+	"github.com/sams96/rgeo"
 	"github.com/twpayne/go-geom/encoding/geojson"
 )
 
@@ -59,7 +60,7 @@ func main() {
 
 	if fc, err := readInputs(inputFiles, *propsFilePath); err != nil {
 		log.Fatal("error reading inputs: ", err)
-	} else if err := writeFeatures(*outPath, fc); err != nil {
+	} else if err := writeFeatures(*outPath, *fc); err != nil {
 		log.Fatal("error writing features: ", err)
 	} else if err := writeAttribution(*outPath, attributionFiles); err != nil {
 		log.Fatal("error writing attribution: ", err)
@@ -93,29 +94,31 @@ func readInputs(in []string, propsFileName string) (*geojson.FeatureCollection, 
 	return fc, nil
 }
 
-func writeFeatures(outPath string, fc *geojson.FeatureCollection) error {
+func writeFeatures(outPath string, fc geojson.FeatureCollection) error {
 	f, err := os.Create(outPath)
 	if err != nil {
 		return fmt.Errorf("create output file: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 
-	zw, err := gzip.NewWriterLevel(f, 9)
+	zw, err := zstd.NewWriter(f, zstd.WithEncoderLevel(zstd.SpeedBestCompression))
 	if err != nil {
-		return fmt.Errorf("create gzip writer: %w", err)
+		return fmt.Errorf("create zstd writer: %w", err)
 	}
 	defer func() { _ = zw.Close() }()
-	encoded, err := json.Marshal(fc) // because NewEncoder would append a \n
+
+	dataset, err := rgeo.LoadGeoJSON(fc)
 	if err != nil {
-		return fmt.Errorf("encode GeoJSON: %w", err)
+		return fmt.Errorf("load GeoJSON: %w", err)
 	}
-	if _, err := zw.Write(encoded); err != nil {
-		return fmt.Errorf("write GeoJSON: %w", err)
+
+	if err := dataset.Encode(zw); err != nil {
+		return fmt.Errorf("encode dataset: %w", err)
 	}
 
 	// explicit flush so that zw.Close always succeeds
 	if err := zw.Flush(); err != nil {
-		return fmt.Errorf("flush gzip writer: %w", err)
+		return fmt.Errorf("flush: %w", err)
 	}
 
 	return nil
