@@ -81,10 +81,10 @@ type Location struct {
 
 // Rgeo is the type used to hold pre-created polygons for reverse geocoding.
 type Rgeo struct {
-	index      *s2.ShapeIndex
-	locs       map[s2.Shape]Location
-	pointQuery *s2.ContainsPointQuery
-	edgeQuery  *s2.EdgeQuery
+	index *s2.ShapeIndex
+	locs  map[s2.Shape]Location
+
+	makeEdgeQuery func() *s2.EdgeQuery
 }
 
 // Go generate commands to regenerate the included datasets, this assumes you
@@ -149,12 +149,17 @@ func New(datasets ...func() []byte) (*Rgeo, error) {
 		ret.locs[p] = getLocationStrings(c.Properties)
 	}
 
-	ret.pointQuery = s2.NewContainsPointQuery(ret.index, s2.VertexModelOpen)
-
 	// Default snapping distance is 5km on earth
 	ret.SetSnappingDistanceEarth(5)
 
 	return ret, nil
+}
+
+// Build builds the underlying shape index. This ensures that future calls to
+// ReverseGeocode will be fast. If Build is not called, then the first lookup
+// will build the index implicitly and experience a 1s+ delay.
+func (r *Rgeo) Build() {
+	r.index.Build()
 }
 
 // SetSnappingDistanceEarth sets ReverseGeocodeSnapping snap distance on Earth.
@@ -177,7 +182,9 @@ func (r *Rgeo) SetSnappingDistanceCustom(d float64, radius float64) {
 	options := s2.NewClosestEdgeQueryOptions().
 		MaxResults(1).
 		DistanceLimit(s1.ChordAngleFromAngle(s1.Angle(angle)).Successor())
-	r.edgeQuery = s2.NewClosestEdgeQuery(r.index, options)
+	r.makeEdgeQuery = func() *s2.EdgeQuery {
+		return s2.NewClosestEdgeQuery(r.index, options)
+	}
 }
 
 // ReverseGeocode returns the country in which the given coordinate is located.
@@ -186,7 +193,8 @@ func (r *Rgeo) SetSnappingDistanceCustom(d float64, radius float64) {
 // in the zeroth position and the latitude in the first position
 // (i.e. []float64{lon, lat}).
 func (r *Rgeo) ReverseGeocode(loc geom.Coord) (Location, error) {
-	res := r.pointQuery.ContainingShapes(pointFromCoord(loc))
+	query := s2.NewContainsPointQuery(r.index, s2.VertexModelOpen)
+	res := query.ContainingShapes(pointFromCoord(loc))
 	if len(res) == 0 {
 		return Location{}, ErrLocationNotFound
 	}
@@ -205,7 +213,7 @@ func (r *Rgeo) ReverseGeocodeSnapping(coord geom.Coord) (Location, error) {
 
 	// Not in a country, so look for the closest country in the defined margin
 	point := pointFromCoord(coord)
-	res := r.edgeQuery.FindEdges(s2.NewMinDistanceToPointTarget(point))
+	res := r.makeEdgeQuery().FindEdges(s2.NewMinDistanceToPointTarget(point))
 	if len(res) == 0 {
 		return Location{}, ErrLocationNotFound
 	}
