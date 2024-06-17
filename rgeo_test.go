@@ -20,11 +20,11 @@ import (
 	"compress/gzip"
 	"errors"
 	"fmt"
-	"github.com/twpayne/go-geom"
 	"math/rand"
 	"testing"
 
 	"github.com/go-test/deep"
+	"github.com/twpayne/go-geom"
 )
 
 var testdata = []struct {

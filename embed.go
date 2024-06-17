@@ -1,4 +1,9 @@
+//go:build !datagen
+
 package rgeo
+
+// data is sourced from: https://github.com/nvkelso/natural-earth-vector/tree/master/geojson
+// and bundled via regen.sh in the repository's root
 
 // embedding files individually here to allow the linker to strip out unused ones
 import _ "embed"

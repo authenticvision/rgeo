@@ -42,10 +42,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/golang/geo/s1"
 	"math"
 	"strings"
 
+	"github.com/golang/geo/s1"
 	"github.com/golang/geo/s2"
 	"github.com/twpayne/go-geom"
 	"github.com/twpayne/go-geom/encoding/geojson"
@@ -86,14 +86,6 @@ type Rgeo struct {
 
 	makeEdgeQuery func() *s2.EdgeQuery
 }
-
-// Go generate commands to regenerate the included datasets, this assumes you
-// have the GeoJSON files from
-// https://github.com/nvkelso/natural-earth-vector/tree/master/geojson.
-// go run datagen/datagen.go -ne -o Countries110 ne_110m_admin_0_countries.geojson
-// go run datagen/datagen.go -ne -o Countries10 ne_10m_admin_0_countries.geojson
-// go run datagen/datagen.go -ne -o Provinces10 -merge ne_10m_admin_0_countries.geojson ne_10m_admin_1_states_provinces.geojson
-// go run datagen/datagen.go -ne -o Cities10 ne_10m_urban_areas_landscan.geojson
 
 // New returns an Rgeo struct which can then be used with ReverseGeocode. It
 // takes any number of datasets as an argument. The included datasets are:

@@ -20,159 +20,164 @@ file into another using the -merge flag (which it does by matching the country
 names). You can use this if you want to use a different dataset to any of those
 included, although that might be somewhat awkward if the properties in your
 GeoJSON file are different.
-
-Usage
-
-	go run datagen.go -o outfile.go infile.geojson
-
-The variable containing the data will be named outfile.
-
-rgeo reads the location information from the following GeoJSON properties:
-
-	- Country:      "ADMIN" or "admin"
-	- CountryLong:  "FORMAL_EN"
-	- CountryCode2: "ISO_A2"
-	- CountryCode3: "ISO_A3"
-	- Continent:    "CONTINENT"
-	- Region:       "REGION_UN"
-	- SubRegion:    "SUBREGION"
-	- Province:     "name"
-	- ProvinceCode: "iso_3166_2"
-	- City:         "name_conve"
 */
 package main
 
 import (
-	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/twpayne/go-geom/encoding/geojson"
 )
 
 func main() {
-	// Read args
-	outFileName := flag.String("o", "", "Path to output file")
-	neCommentFlag := flag.Bool("ne", false, "Use Natural earth comment")
-	mergeFileName := flag.String("merge", "", "File to get extra info from")
-
+	outPath := flag.String("o", "", "path to output file")
+	propsFilePath := flag.String("merge", "", "path to file to merge properties from")
 	flag.Parse()
 
-	if *outFileName == "" {
-		fmt.Println("Please specify an output file with -o")
-		return
+	if *outPath == "" {
+		_, _ = fmt.Fprintf(os.Stderr, "usage: %s -o outprefix <infile.geojson> [infile2.geojson] [...]\n", os.Args[0])
+		os.Exit(1)
 	}
 
-	feats, err := readInputs(flag.Args(), *mergeFileName)
-	if err != nil {
-		log.Fatal(err)
+	inputFiles := flag.Args()
+
+	// cosmetics for generating the .txt attribution file
+	attributionFiles := append([]string{}, inputFiles...)
+	if *propsFilePath != "" {
+		attributionFiles = append(attributionFiles, *propsFilePath)
+	}
+	for i, path := range attributionFiles {
+		attributionFiles[i] = filepath.Base(path)
 	}
 
-	var pre string
-	if *neCommentFlag {
-		pre = "https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/"
+	if fc, err := readInputs(inputFiles, *propsFilePath); err != nil {
+		log.Fatal("error reading inputs: ", err)
+	} else if err := writeFeatures(*outPath, fc); err != nil {
+		log.Fatal("error writing features: ", err)
+	} else if err := writeAttribution(*outPath, attributionFiles); err != nil {
+		log.Fatal("error writing attribution: ", err)
 	}
-
-	files := flag.Args()
-	if *mergeFileName != "" {
-		files = append(files, *mergeFileName)
-	}
-
-	resp, err := json.Marshal(feats)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Compress data
-	var buf bytes.Buffer
-	zw, _ := gzip.NewWriterLevel(&buf, 9)
-
-	if _, err := zw.Write(resp); err != nil {
-		log.Fatal(err)
-	}
-	zw.Flush()
-	if err := zw.Close(); err != nil {
-		log.Fatal(err)
-	}
-
-	f, _ := os.Create(fmt.Sprintf("%s.gz", *outFileName))
-	_, err = io.Copy(f, &buf)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fReadme, _ := os.Create(fmt.Sprintf("%s.txt", *outFileName))
-	fmt.Fprintf(fReadme, "%s %s", strings.TrimSuffix(*outFileName, ".go"), "uses data from "+printSlice(prefixSlice(pre, files)))
 }
 
-func readInputs(in []string, mergeFileName string) (*geojson.FeatureCollection, error) {
-	fc := new(geojson.FeatureCollection)
-
-	var mergeData *geojson.FeatureCollection
-
-	if mergeFileName != "" {
-		md, err := readInput(mergeFileName, nil)
+func readInputs(in []string, propsFileName string) (*geojson.FeatureCollection, error) {
+	var props *geojson.FeatureCollection
+	if propsFileName != "" {
+		md, err := readGeoJSON(propsFileName)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("read props GeoJSON file: %w", err)
 		}
-
-		mergeData = md
+		props = md
 	}
 
+	fc := &geojson.FeatureCollection{}
 	for _, f := range in {
-		s, err := readInput(f, mergeData)
+		s, err := readGeoJSON(f)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("read input GeoJSON file: %w", err)
 		}
-
+		if props != nil {
+			if err := extendProps(s, props); err != nil {
+				return nil, fmt.Errorf("extend properties: %w", err)
+			}
+		}
 		fc.Features = append(fc.Features, s.Features...)
 	}
 
 	return fc, nil
 }
 
-func readInput(f string, mergeData *geojson.FeatureCollection) (*geojson.FeatureCollection, error) {
-	// Open infile
-	infile, err := os.Open(f)
+func writeFeatures(outPath string, fc *geojson.FeatureCollection) error {
+	f, err := os.Create(outPath)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("create output file: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	zw, err := gzip.NewWriterLevel(f, 9)
+	if err != nil {
+		return fmt.Errorf("create gzip writer: %w", err)
+	}
+	defer func() { _ = zw.Close() }()
+	encoded, err := json.Marshal(fc) // because NewEncoder would append a \n
+	if err != nil {
+		return fmt.Errorf("encode GeoJSON: %w", err)
+	}
+	if _, err := zw.Write(encoded); err != nil {
+		return fmt.Errorf("write GeoJSON: %w", err)
 	}
 
-	defer infile.Close()
-
-	// Parse geojson
-	var fc geojson.FeatureCollection
-	if err := json.NewDecoder(infile).Decode(&fc); err != nil {
-		return nil, err
+	// explicit flush so that zw.Close always succeeds
+	if err := zw.Flush(); err != nil {
+		return fmt.Errorf("flush gzip writer: %w", err)
 	}
 
-	if mergeData == nil {
-		return &fc, nil
+	return nil
+}
+
+// readGeoJSON parses a GeoJSON file as geojson.FeatureCollection
+func readGeoJSON(path string) (*geojson.FeatureCollection, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open file: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	var result geojson.FeatureCollection
+	if err := json.NewDecoder(f).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode GeoJSON: %w", err)
 	}
 
-	for _, feat := range fc.Features {
-		country, ok := feat.Properties["admin"].(string)
+	return &result, nil
+}
+
+// extendProps merges properties from source into dest based on country name
+func extendProps(dest *geojson.FeatureCollection, source *geojson.FeatureCollection) error {
+	for _, feat := range dest.Features {
+		destCountry, ok := getAdmin(feat)
 		if !ok {
-			log.Println("country name in wrong place")
-			break
+			return fmt.Errorf("missing country in destination feature: %v", feat)
 		}
-
-		for _, md := range mergeData.Features {
-			if md.Properties["ADMIN"] == country {
+		for _, md := range source.Features {
+			if sourceCountry, _ := getAdmin(md); sourceCountry == destCountry {
 				for k, v := range md.Properties {
 					feat.Properties[k] = v
 				}
 			}
 		}
 	}
+	return nil
+}
 
-	return &fc, nil
+// getAdmin compensates for "admin" vs "ADMIN"
+func getAdmin(feat *geojson.Feature) (string, bool) {
+	if country, ok := feat.Properties["ADMIN"].(string); ok {
+		return country, true
+	} else if country, ok := feat.Properties["admin"].(string); ok {
+		return country, true
+	} else {
+		return "", false
+	}
+}
+
+func writeAttribution(outPath string, attribFiles []string) error {
+	basePath := strings.TrimSuffix(outPath, filepath.Ext(outPath))
+	f, err := os.Create(basePath + ".txt")
+	if err != nil {
+		return fmt.Errorf("create attribution file: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	fileName := filepath.Base(basePath)
+	if _, err := fmt.Fprintf(f, "%s uses data from %s", fileName, printSlice(attribFiles)); err != nil {
+		return fmt.Errorf("write attribution file: %w", err)
+	}
+	return nil
 }
 
 // printSlice prints a slice of strings with commas and an ampersand if needed
@@ -188,13 +193,4 @@ func printSlice(in []string) string {
 	default:
 		return printSlice([]string{strings.Join(in[:n-1], ", "), in[n-1]})
 	}
-}
-
-// prefix slice adds a given prefix to a slice of strings
-func prefixSlice(pre string, slice []string) (ret []string) {
-	for _, i := range slice {
-		ret = append(ret, pre+i)
-	}
-
-	return
 }
