@@ -37,18 +37,14 @@ just make an issue first.
 package rgeo
 
 import (
-	"bytes"
-	"compress/gzip"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/golang/geo/s1"
 	"math"
 	"strings"
 
+	"github.com/golang/geo/s1"
 	"github.com/golang/geo/s2"
 	"github.com/twpayne/go-geom"
-	"github.com/twpayne/go-geom/encoding/geojson"
 )
 
 // ErrLocationNotFound is returned when no country is found for given
@@ -81,78 +77,52 @@ type Location struct {
 
 // Rgeo is the type used to hold pre-created polygons for reverse geocoding.
 type Rgeo struct {
-	index *s2.ShapeIndex
-	locs  map[s2.Shape]Location
-
+	index         *s2.ShapeIndex
 	makeEdgeQuery func() *s2.EdgeQuery
 }
 
-// Go generate commands to regenerate the included datasets, this assumes you
-// have the GeoJSON files from
-// https://github.com/nvkelso/natural-earth-vector/tree/master/geojson.
-// go run datagen/datagen.go -ne -o Countries110 ne_110m_admin_0_countries.geojson
-// go run datagen/datagen.go -ne -o Countries10 ne_10m_admin_0_countries.geojson
-// go run datagen/datagen.go -ne -o Provinces10 -merge ne_10m_admin_0_countries.geojson ne_10m_admin_1_states_provinces.geojson
-// go run datagen/datagen.go -ne -o Cities10 ne_10m_urban_areas_landscan.geojson
+// shapeLocation is used for storing location references in s2.ShapeIndex.
+type shapeLocation interface {
+	s2.Shape
+	Location() Location
+}
 
-// New returns an Rgeo struct which can then be used with ReverseGeocode. It
-// takes any number of datasets as an argument. The included datasets are:
-// Countries110, Countries10, Provinces10 and Cities10. Provinces10 includes all
-// of the country information so if that's all you want don't use Countries as
-// well. Cities10 only includes cities so you'll probably want to use
-// Provinces10 with it.
-func New(datasets ...func() []byte) (*Rgeo, error) {
-	// Parse GeoJSON
-	var fc geojson.FeatureCollection
+// shape implements shapeLocation
+type shape struct {
+	s2.Shape
+	loc Location
+}
 
-	for i, dataset := range datasets {
-		br := bytes.NewReader(dataset())
-		if br.Len() == 0 {
-			return nil, fmt.Errorf("no data in dataset %d", i)
-		}
+func (s *shape) Location() Location {
+	return s.loc
+}
 
-		zr, err := gzip.NewReader(br)
-		if err != nil {
-			return nil, fmt.Errorf("decompression failed for dataset %d: %w", i, err)
-		}
+// Dataset provides a Feature slice.
+// It is a function for easier integration into existing rgeo v1 code only.
+type Dataset func() []Feature
 
-		// Parse GeoJSON
-		var tfc geojson.FeatureCollection
-		if err := json.NewDecoder(zr).Decode(&tfc); err != nil {
-			return nil, fmt.Errorf("invalid JSON in dataset %d: %w", i, err)
-		}
-
-		if err := zr.Close(); err != nil {
-			return nil, fmt.Errorf("failed to close gzip reader for dataset %d: %w", i, err)
-		}
-
-		fc.Features = append(fc.Features, tfc.Features...)
+// New returns a Rgeo struct which can then be used with ReverseGeocode.
+// It takes any number of datasets as arguments.
+//
+// The included datasets are:
+//   - Cities10
+//   - Countries10
+//   - Countries110
+//   - Provinces10
+func New(datasets ...Dataset) (*Rgeo, error) {
+	if len(datasets) == 0 {
+		return nil, errors.New("no datasets provided")
 	}
-
-	// Initialise Rgeo struct
-	ret := new(Rgeo)
-	ret.index = s2.NewShapeIndex()
-	ret.locs = make(map[s2.Shape]Location)
-
-	// Convert GeoJSON features from geom (multi)polygons to s2 polygons
-	for _, c := range fc.Features {
-		p, err := polygonFromGeometry(c.Geometry)
-		if err != nil {
-			return nil, fmt.Errorf("bad polygon in geometry: %w", err)
+	r := &Rgeo{index: s2.NewShapeIndex()}
+	r.SetSnappingDistanceEarth(5) // kilometers on Earth
+	for _, dataset := range datasets {
+		features := dataset()
+		for _, f := range features {
+			p := f.Polygon
+			r.index.Add(&shape{Shape: p, loc: f.Location})
 		}
-
-		ret.index.Add(p)
-
-		// The s2 ContainsPointQuery returns the shapes that contain the given
-		// point, but I haven't found any way to attach the location information
-		// to the shapes, so I use a map to get the information.
-		ret.locs[p] = getLocationStrings(c.Properties)
 	}
-
-	// Default snapping distance is 5km on earth
-	ret.SetSnappingDistanceEarth(5)
-
-	return ret, nil
+	return r, nil
 }
 
 // Build builds the underlying shape index. This ensures that future calls to
@@ -228,9 +198,9 @@ func (r *Rgeo) ReverseGeocodeSnapping(coord geom.Coord) (Location, error) {
 }
 
 // combineLocations combines the Locations for the given s2 Shapes.
-func (r *Rgeo) combineLocations(s []s2.Shape) (l Location) {
-	for _, shape := range s {
-		loc := r.locs[shape]
+func (r *Rgeo) combineLocations(shapes []s2.Shape) (l Location) {
+	for _, s := range shapes {
+		loc := s.(shapeLocation).Location()
 		l = Location{
 			Country:      firstNonEmpty(l.Country, loc.Country),
 			CountryLong:  firstNonEmpty(l.CountryLong, loc.CountryLong),

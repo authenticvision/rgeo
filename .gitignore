@@ -17,5 +17,7 @@
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
+# Dataset generator inputs
 *.geojson
-datagen/datagen
+cmd/datagen/datagen
+natural-earth-vector

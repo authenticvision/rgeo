@@ -17,14 +17,15 @@ package rgeo
 
 import (
 	"bytes"
-	"compress/gzip"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/twpayne/go-geom"
 	"math/rand"
 	"testing"
 
 	"github.com/go-test/deep"
+	"github.com/twpayne/go-geom"
+	"github.com/twpayne/go-geom/encoding/geojson"
 )
 
 var testdata = []struct {
@@ -211,7 +212,7 @@ var testdata = []struct {
 }
 
 func TestReverseGeocode(t *testing.T) {
-	testgeo := `{
+	testgeo := json.RawMessage(`{
 		"type":"FeatureCollection",
 			"features":[
 				{"type":"Feature",
@@ -219,7 +220,15 @@ func TestReverseGeocode(t *testing.T) {
 				"geometry":{"type":"Polygon",
 					"coordinates":[[[0,52],[1,52],[1,53],[0,53],[0,52]]]}}
 			]
-		}`
+		}`)
+	var fc geojson.FeatureCollection
+	if err := json.Unmarshal(testgeo, &fc); err != nil {
+		t.Fatalf("decode GeoJSON: %s", err)
+	}
+	features, err := LoadGeoJSON(fc)
+	if err != nil {
+		t.Fatalf("features from GeoJSON: %s", err)
+	}
 
 	var testdata = []struct {
 		name     string
@@ -241,7 +250,7 @@ func TestReverseGeocode(t *testing.T) {
 		},
 	}
 
-	r, err := New(func() []byte { return compressData(t, testgeo) })
+	r, err := New(func() []Feature { return features })
 	if err != nil {
 		t.Error(err)
 	}
@@ -267,7 +276,7 @@ func TestReverseGeocode_Countries(t *testing.T) {
 	}
 	t.Parallel()
 
-	for _, dataset := range []func() []byte{Countries110, Countries10} {
+	for _, dataset := range []Dataset{Countries110, Countries10} {
 		r, err := New(dataset)
 		if err != nil {
 			t.Error(err)
@@ -352,82 +361,53 @@ func TestReverseGeocode_Cities(t *testing.T) {
 	}
 }
 
-func TestNew_BadData(t *testing.T) {
+func TestLoadGeoJSON_BadData(t *testing.T) {
 	testdata := []struct {
 		name string
-		in   func() []byte
+		in   string
 		err  string
 	}{
 		{
-			name: "Empty data",
-			in:   func() []byte { return []byte(``) },
-			err:  "no data in dataset 0",
-		},
-		{
 			name: "Wrong type",
-			in: func() []byte {
-				return compressData(t,
-					`{"type":"FeatureCollection","features":
-							[{"type":"Feature","geometry":
-								{"type":"Point","coordinates":[0,0]}}]}`,
-				)
-			},
+			in: `{"type":"FeatureCollection","features":
+				  [{"type":"Feature","geometry":
+				    {"type":"Point","coordinates":[0,0]}}]}`,
 			err: "bad polygon in geometry: needs Polygon or MultiPolygon",
 		},
 		{
 			name: "Small polygon",
-			in: func() []byte {
-				return compressData(t,
-					`{"type":"FeatureCollection","features":
-							[{"type":"Feature","geometry":
-								{"type":"Polygon",
-								"coordinates":[[[1,2],[3,4],[1,2]]]}}]}`,
-				)
-			},
+			in: `{"type":"FeatureCollection","features":
+				  [{"type":"Feature","geometry":
+				    {"type":"Polygon",
+					 "coordinates":[[[1,2],[3,4],[1,2]]]}}]}`,
 			err: "bad polygon in geometry: can't convert ring with less than 4 points",
 		},
 		{
 			name: "No repeated end",
-			in: func() []byte {
-				return compressData(t,
-					`{"type":"FeatureCollection","features":
-							[{"type":"Feature","geometry":
-								{"type":"Polygon",
-								"coordinates":[[[1,2],[3,4],[5,6],[7,8]]]}}]}`,
-				)
-			},
+			in: `{"type":"FeatureCollection","features":
+				  [{"type":"Feature","geometry":
+				    {"type":"Polygon",
+					 "coordinates":[[[1,2],[3,4],[5,6],[7,8]]]}}]}`,
 			err: "bad polygon in geometry: " +
 				"last coordinate not same as first for polygon: [1 2 3 4 5 6 7 8]",
 		},
 		{
 			name: "Bad Multipolygon",
-			in: func() []byte {
-				return compressData(t,
-					`{"type":"FeatureCollection","features":
-							[{"type":"Feature","geometry":
-								{"type":"MultiPolygon",
-								"coordinates":[[[[1,2],[3,4],[5,6],[7,8]]]]}}]}`,
-				)
-			},
+			in: `{"type":"FeatureCollection","features":
+				  [{"type":"Feature","geometry":
+				    {"type":"MultiPolygon",
+					 "coordinates":[[[[1,2],[3,4],[5,6],[7,8]]]]}}]}`,
 			err: "bad polygon in geometry: " +
 				"last coordinate not same as first for polygon: [1 2 3 4 5 6 7 8]",
-		},
-		{
-			name: "Bad compression",
-			in:   func() []byte { return []byte(`dGhpcyBpcyBub3QgU29tcHJIc3NIZA==`) },
-			err:  "decompression failed for dataset 0: gzip: invalid header",
-		},
-		{
-			name: "Bad JSON",
-			in:   func() []byte { return []byte(compressData(t, `this is not JSON`)) },
-			err:  "invalid JSON in dataset 0: invalid character 'h' in literal true (expecting 'r')",
 		},
 	}
 	for _, test := range testdata {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			_, err := New(test.in)
-			if err != nil && err.Error() != test.err {
+			var fc geojson.FeatureCollection
+			if err := json.Unmarshal([]byte(test.in), &fc); err != nil {
+				t.Errorf("decode GeoJSON: %s", err)
+			} else if _, err := LoadGeoJSON(fc); err != nil && err.Error() != test.err {
 				t.Errorf("expected error: %s\n got: %s\n", test.err, err)
 			}
 		})
@@ -702,17 +682,16 @@ func BenchmarkNewCity(b *testing.B) {
 	}
 }
 
-func compressData(t *testing.T, in string) []byte {
-	var buf bytes.Buffer
-	zw := gzip.NewWriter(&buf)
-
-	if _, err := zw.Write([]byte(in)); err != nil {
-		t.Error(err)
+func testDataset(t *testing.T, text string) Dataset {
+	var fc geojson.FeatureCollection
+	if err := json.NewDecoder(bytes.NewReader([]byte(text))).Decode(&fc); err != nil {
+		t.Fatalf("decode GeoJSON: %s", err)
 	}
-
-	if err := zw.Close(); err != nil {
-		t.Error(err)
+	features, err := LoadGeoJSON(fc)
+	if err != nil {
+		t.Fatalf("features from GeoJSON: %s", err)
 	}
-
-	return buf.Bytes()
+	return func() []Feature {
+		return features
+	}
 }
