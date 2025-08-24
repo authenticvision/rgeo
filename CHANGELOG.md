@@ -5,19 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.0] - 2025-03-08
+## [1.4.0] - 2025-08-24
+
+This is the fork's initial tagged release.
+The features that are finally tagged here were developed 2023-2024.
+Note that this fork does not tag upstream's `v1.3.0`, which includes many bugfixes upstreamed from this repository.
 
 ### Added
+ - New `ReverseGeocodeSnapping` method for unsharp/heuristic matching that works near coastlines.
  - New `Build` method, see below
+ - Make `ReverseGeocode` thread safe (@mologie)
+ 	 - This makes the first call to `ReverseGeocode` much slower. This can be mitigated by calling `Build` first.
 
-### Changed
- - Make `ReverseGeocode` thread safe, thanks to @mologie (#34)
-	- This makes the first call to `ReverseGeocode` much slower. This can be
-	mitigated by calling `Build` first.
- -  Optimizations: Only link used datasets, avoid copies, avoid pkg/errors
- dependency, thanks to @mologie (#26)
- - Update natural earth data to v5.1.2, thanks to @SaTae66
- - Bump dependency versions, thanks to @dependabot
+## Changed
+ - Optimizations: Only link used datasets, avoid copies, avoid pkg/errors dependency
+ - Speed up `New()` by factor 30x: https://github.com/authenticvision/rgeo/pull/2 (@mologie)
+ - Update natural earth data to v5.1.2 (@SaTae66)
+ - Use `ISO_A2_EH` field for ISO code lookup: https://github.com/authenticvision/rgeo/pull/1 (@SaTae66)
 
 ## [1.2.0] - 2023-01-03
 
