@@ -32,8 +32,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/authenticvision/rgeo"
 	"github.com/klauspost/compress/zstd"
-	"github.com/sams96/rgeo"
 	"github.com/twpayne/go-geom/encoding/geojson"
 )
 

@@ -1,9 +1,8 @@
-# rgeo
-[![](https://img.shields.io/github/actions/workflow/status/sams96/rgeo/continuous-integration.yml?branch=master&style=for-the-badge)](https://github.com/sams96/rgeo/actions?query=workflow%3Acontinuous-integration)
-[![](https://goreportcard.com/badge/github.com/sams96/rgeo?style=for-the-badge)](https://goreportcard.com/report/github.com/sams96/rgeo)
-[![Codecov](https://img.shields.io/codecov/c/github/sams96/rgeo?logo=codecov&style=for-the-badge)](https://codecov.io/gh/sams96/rgeo)
-[![Release](https://img.shields.io/github/tag/sams96/rgeo.svg?label=release&color=24B898&logo=github&style=for-the-badge)](https://github.com/sams96/rgeo/releases/latest)
-[![go.dev reference](https://img.shields.io/badge/go.dev-reference-007d9c?logo=go&logoColor=white&style=for-the-badge)](https://pkg.go.dev/github.com/sams96/rgeo)
+# rgeo fork
+
+This is a fork of https://github.com/sams96/rgeo with
+* modified data format for 30x faster startup, and
+* snapping functionality, so that e.g. lookups near coastlines succeed heuristically.
 
 Rgeo is a fast, simple solution for local reverse geocoding, Rather than relying
 on external software or online APIs, rgeo packages all of the data it needs in
@@ -14,7 +13,7 @@ Rgeo uses data from [naturalearthdata.com](https://naturalearthdata.com), if
 your coordinates are going to be near specific borders I would advise checking
 the data beforehand (links to which are in the files). If you want to use your
 own dataset, check out
-[datagen](https://github.com/sams96/rgeo/tree/master/cmd/datagen).
+[datagen](https://github.com/authenticvision/rgeo/tree/master/cmd/datagen).
 
 ## Key Features
 
@@ -31,12 +30,12 @@ own dataset, check out
 
 Download with
 
-	go get github.com/sams96/rgeo
+	go get github.com/authenticvision/rgeo
 
 and add
 
 ```go
-import "github.com/sams96/rgeo"
+import "github.com/authenticvision/rgeo"
 ```
 
 to the top of your Go file to include it in your project.
@@ -73,7 +72,7 @@ are:
    well use one of the above datasets with it.
 Once initialised you can use `ReverseGeocode` on the value returned by `New`,
 with your coordinates to get the location information. See the [Go
-Docs](https://pkg.go.dev/github.com/sams96/rgeo) for more information on usage.
+Docs](https://pkg.go.dev/github.com/authenticvision/rgeo) for more information on usage.
 
 Then use `ReverseGeocode` to get the location information of the given coordinate.
 
@@ -167,9 +166,12 @@ distance `d float64` in the same units used for the radius of the sphere.
 
 ## Contributing
 
-Contributions are welcome, I haven't got any guidelines or anything so maybe
-just make an issue first.
+This is an internally used fork of https://github.com/sams96/rgeo.
+We do not intend for this to become the new upstream, but it seems to be the
+only active fork at the time of writing. Please check the original author's
+blog post for details: https://sams96.github.io/rgeo-5-years-on/.
 
-## Projects using rgeo
-
- - [rgeoSrv](https://github.com/sams96/rgeoSrv) - rgeo as a microservice
+We will continue to maintain and use this project for the time being, because
+alternatives require sqlite3 in Go, which -- due to their C dependencies or per
+platform source to source compilation - results in non-portable projects with
+fragile package interdependencies.

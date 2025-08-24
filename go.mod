@@ -1,4 +1,4 @@
-module github.com/sams96/rgeo
+module github.com/authenticvision/rgeo
 
 go 1.21.0
 
